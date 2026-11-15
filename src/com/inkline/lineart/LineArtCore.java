@@ -28,8 +28,10 @@ public final class LineArtCore {
 
     public static final class Options {
         public int mode = MODE_SMART;
-        /** 0..100，数值越大保留的线条越多 */
+        /** 0..100 灵敏度：边缘检出的敏感程度，数值越大越容易检出弱边缘 */
         public int sensitivity = 50;
+        /** 0..100 浓度（墨量）：数值越大越多弱边缘被画成黑线，线条更密更实；50 为默认 */
+        public int density = 50;
         /** 纯黑白二值输出，底色绝对干净 */
         public boolean pureBW = true;
         /** 水平镜像，纹身转印稿需要 */
@@ -38,7 +40,7 @@ public final class LineArtCore {
         public boolean invert = false;
         /** line-relifer 风格增强：去噪、连接断线、修毛刺 */
         public boolean enhance = true;
-        /** 1 细 / 2 中 / 3 粗 */
+        /** 1~5 档线条粗细，每加一档做一次 3x3 形态学膨胀 */
         public int lineWidth = 1;
         /** 对应 color-card line() 的 color 参数：把底色替换成指定颜色 */
         public boolean recolor = false;
@@ -87,8 +89,8 @@ public final class LineArtCore {
             lineGray[i] = v < 0 ? 0 : (v > 255 ? 255 : v);
         }
 
-        // ---------- 6) 自适应二值化（Bradley 局部均值 + 纯白底保护） ----------
-        int[] mask = binarize(lineGray, w, h, o.sensitivity);
+        // ---------- 6) 自适应二值化（Bradley 局部均值 + 浓度偏移 + 纯白底保护） ----------
+        int[] mask = binarize(lineGray, w, h, o.sensitivity, o.density);
 
         // ---------- 7) line-relifer 风格线条增强 ----------
         if (o.enhance) mask = enhanceLines(mask, w, h, o.lineWidth);
@@ -268,7 +270,7 @@ public final class LineArtCore {
      * 附加 "lineGray < 250" 的硬条件，保证大面积底色绝对纯白、不带灰噪点。
      * 积分图用 int 即可（最大和 = 像素数 * 255 < 2^31）。
      */
-    private static int[] binarize(int[] lg, int w, int h, int sensitivity) {
+    private static int[] binarize(int[] lg, int w, int h, int sensitivity, int density) {
         int n = w * h, stride = w + 1;
         int[] sumImg = new int[(w + 1) * (h + 1)];
         for (int y = 0; y < h; y++) {
@@ -280,6 +282,9 @@ public final class LineArtCore {
         }
         int radius = Math.max(6, Math.min(w, h) / 24);
         double k = 0.02 + clamp(sensitivity, 0, 100) * 0.0013;
+        // 浓度：整体平移线稿灰度。浓度高 -> 有效值更小 -> 更多弱边缘越过阈值变成黑线。
+        // 白底保护始终基于原始 lineGray，所以无论浓度多高，纯白底色都不会变脏。
+        int bias = (int) ((clamp(density, 0, 100) - 50) * 0.7);   // -35 .. +35
         int[] mask = new int[n];
         for (int y = 0; y < h; y++) {
             int y1 = Math.max(0, y - radius), y2 = Math.min(h - 1, y + radius);
@@ -290,8 +295,9 @@ public final class LineArtCore {
                          - sumImg[bottom + x1] + sumImg[top + x1];
                 int count = (x2 - x1 + 1) * (y2 - y1 + 1);
                 double mean = (double) sum / count;
-                int v = lg[y * w + x];
-                mask[y * w + x] = (v < 250 && v < mean * (1.0 - k)) ? 1 : 0;
+                int raw = lg[y * w + x];
+                int v = raw - bias;
+                mask[y * w + x] = (raw < 250 && v < mean * (1.0 - k)) ? 1 : 0;
             }
         }
         return mask;
@@ -302,10 +308,11 @@ public final class LineArtCore {
     // ======================================================================
 
     private static int[] enhanceLines(int[] mask, int w, int h, int lineWidth) {
+        int width = clamp(lineWidth, 1, 5);
         int[] a = removeIsolated(mask, w, h);
         a = removeSmallComponents(a, w, h);
-        if (lineWidth >= 2) a = dilate(a, w, h);
-        if (lineWidth >= 3) a = dilate(a, w, h);
+        // 粗细：每加一档做一次 3x3 膨胀（线宽约 +2px），最高 5 档
+        for (int t = 1; t < width; t++) a = dilate(a, w, h);
         a = fillHoles(a, w, h);
         return removeSmallComponents(a, w, h);
     }

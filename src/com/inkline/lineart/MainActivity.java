@@ -65,15 +65,17 @@ public class MainActivity extends Activity {
     private static final int CHIP_OFF = 0xFFEEF0F4;
 
     private CompareView compare;
-    private TextView statusView, emptyHint, sensValue;
+    private TextView statusView, emptyHint, sensValue, densityValue, widthValue;
     private ProgressBar progress;
-    private SeekBar sensBar;
+    private SeekBar sensBar, densityBar, widthBar;
     private Button btnSmart, btnClassic, btnColor, btnMirror, btnBW, btnSide, btnPeek;
     private Button btnPick, btnSave, btnShare;
 
     private Bitmap original, result;
     private int mode = LineArtCore.MODE_SMART;
     private int sensitivity = 50;
+    private int density = 50;      // 浓度（墨量）
+    private int lineWidth = 1;     // 粗细 1~5 档
     private boolean mirror = false, pureBW = true, sideBySide = false;
 
     private final ExecutorService pool = Executors.newSingleThreadExecutor();
@@ -181,28 +183,43 @@ public class MainActivity extends Activity {
         row2.addView(sensValue);
         panel.addView(row2, matchWrap());
 
-        // 行 3：开关
-        LinearLayout row3 = hBox();
-        row3.setPadding(0, dp(2), 0, dp(8));
+        // 行 3：浓度 + 粗细（两个独立滑块，改完自动重新生成）
+        LinearLayout rowSliders = hBox();
+        rowSliders.setPadding(0, dp(2), 0, dp(2));
+        densityBar = new SeekBar(this);
+        densityBar.setMax(100);
+        densityBar.setProgress(density);
+        widthBar = new SeekBar(this);
+        widthBar.setMax(4);                    // 0..4 映射为 1..5 档
+        widthBar.setProgress(lineWidth - 1);
+        densityValue = tv(density + "%", 11, TEXT, true);
+        widthValue = tv(lineWidth + "×", 11, TEXT, true);
+        rowSliders.addView(sliderBlock("浓度", densityBar, densityValue), weighted(1f, 2));
+        rowSliders.addView(sliderBlock("粗细", widthBar, widthValue), weighted(1f, 2));
+        panel.addView(rowSliders, matchWrap());
+
+        // 行 4：开关
+        LinearLayout rowToggles = hBox();
+        rowToggles.setPadding(0, dp(2), 0, dp(8));
         btnMirror = chip("镜像转印");
         btnBW = chip("纯黑白");
         btnSide = chip("并排对比");
         btnPeek = chip("按住看原图");
-        row3.addView(btnMirror, weighted(1f, 2));
-        row3.addView(btnBW, weighted(1f, 2));
-        row3.addView(btnSide, weighted(1f, 2));
-        row3.addView(btnPeek, weighted(1f, 2));
-        panel.addView(row3, matchWrap());
+        rowToggles.addView(btnMirror, weighted(1f, 2));
+        rowToggles.addView(btnBW, weighted(1f, 2));
+        rowToggles.addView(btnSide, weighted(1f, 2));
+        rowToggles.addView(btnPeek, weighted(1f, 2));
+        panel.addView(rowToggles, matchWrap());
 
-        // 行 4：主操作
-        LinearLayout row4 = hBox();
+        // 行 5：主操作
+        LinearLayout rowActions = hBox();
         btnPick = bigButton("＋ 选择图片", DARK, Color.WHITE);
         btnSave = bigButton("保存底稿", CHIP_OFF, TEXT);
         btnShare = bigButton("分享", CHIP_OFF, TEXT);
-        row4.addView(btnPick, weighted(1.6f, 3));
-        row4.addView(btnSave, weighted(1f, 3));
-        row4.addView(btnShare, weighted(1f, 3));
-        panel.addView(row4, matchWrap());
+        rowActions.addView(btnPick, weighted(1.6f, 3));
+        rowActions.addView(btnSave, weighted(1f, 3));
+        rowActions.addView(btnShare, weighted(1f, 3));
+        panel.addView(rowActions, matchWrap());
 
         root.addView(panel, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
@@ -254,6 +271,24 @@ public class MainActivity extends Activity {
             @Override public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
                 sensitivity = p;
                 sensValue.setText(String.valueOf(p));
+                if (fromUser) scheduleReprocess();
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) { scheduleReprocess(); }
+        });
+        densityBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                density = p;
+                densityValue.setText(p + "%");
+                if (fromUser) scheduleReprocess();
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) { scheduleReprocess(); }
+        });
+        widthBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean fromUser) {
+                lineWidth = p + 1;
+                widthValue.setText(lineWidth + "×");
                 if (fromUser) scheduleReprocess();
             }
             @Override public void onStartTrackingTouch(SeekBar s) {}
@@ -415,7 +450,8 @@ public class MainActivity extends Activity {
         o.pureBW = pureBW;
         o.mirror = mirror;
         o.enhance = true;
-        o.lineWidth = 1;
+        o.density = density;
+        o.lineWidth = lineWidth;
         final Bitmap src = original;
 
         pool.execute(new Runnable() {
@@ -430,7 +466,8 @@ public class MainActivity extends Activity {
                             if (old != null) old.recycle();
                             progress.setVisibility(View.GONE);
                             statusView.setText("完成 · " + r.getWidth() + "×" + r.getHeight()
-                                    + " · 白底黑线" + (mirror ? " · 已镜像" : "") + " · 可直接转印");
+                                    + " · 浓度" + density + "% · 粗细" + lineWidth + "×"
+                                    + " · 白底黑线" + (mirror ? " · 已镜像" : ""));
                             busy = false;
                             if (pending) { pending = false; runProcess(); }
                         }
@@ -593,10 +630,13 @@ public class MainActivity extends Activity {
                 + "3. 左右拖动中间的分割线对比原图与线稿；「并排对比」可同时看两图；"
                 + "「按住看原图」可临时查看原图。\n\n"
                 + "4. 「镜像转印」会水平翻转图案 —— 纹身转印必须打印镜像稿，转印到皮肤上才是正的。\n\n"
-                + "5. 「灵敏度」越高线条越多；「智能线稿」适合照片/插画，「经典勾线」复刻 "
-                + "color-card 的相邻像素色差勾线算法。\n\n"
-                + "6. 「提取色卡」融合 color-card 的 crowd / naive，从原图提取主色，点击色块复制 HEX。\n\n"
-                + "7. 「保存底稿」导出无损 PNG 到相册 Pictures/图转线稿；「分享」可直接发给打印机 App。\n\n"
+                + "5. 三个调节项作用不同，且改完自动重新生成：\n"
+                + "   · 灵敏度：边缘检出的敏感程度，越高越容易抓到弱边缘；\n"
+                + "   · 浓度：线条的墨量，越高越多弱边缘画成黑线、画面更密实；\n"
+                + "   · 粗细：1~5 档逐档加粗，转印小图建议 2~3 档。\n\n"
+                + "6. 「智能线稿」适合照片/插画；「经典勾线」复刻 color-card 的相邻像素色差勾线算法。\n\n"
+                + "7. 「提取色卡」融合 color-card 的 crowd / naive，从原图提取主色，点击色块复制 HEX。\n\n"
+                + "8. 「保存底稿」导出无损 PNG 到相册 Pictures/图转线稿；「分享」可直接发给打印机 App。\n\n"
                 + "全程离线处理，不上传任何图片，不申请联网权限。";
         new AlertDialog.Builder(this).setTitle("使用说明").setMessage(msg)
                 .setPositiveButton("知道了", null).show();
@@ -605,6 +645,19 @@ public class MainActivity extends Activity {
     // ==================================================================
     // UI 小工具
     // ==================================================================
+
+    /** 紧凑滑块单元：上排「标签 + 当前值」，下排 SeekBar，便于两个滑块并排 */
+    private LinearLayout sliderBlock(String label, SeekBar bar, TextView value) {
+        LinearLayout box = vBox();
+        LinearLayout top = hBox();
+        top.addView(tv(label, 11, TEXT, false));
+        value.setGravity(Gravity.END);
+        top.addView(value, new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        box.addView(top, matchWrap());
+        box.addView(bar, matchWrap());
+        return box;
+    }
 
     private int dp(float v) {
         return Math.round(v * getResources().getDisplayMetrics().density);

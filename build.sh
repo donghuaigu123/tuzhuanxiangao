@@ -17,7 +17,7 @@ if [ ! -f "$AJAR" ] || [ ! -x "$BT/aapt2" ]; then
 fi
 
 B="$ROOT/build"
-OUT="${1:-$ROOT/app/TuZhuanXianGao-v1.0.0.apk}"
+OUT="${1:-$ROOT/app/TuZhuanXianGao-v1.1.0.apk}"
 rm -rf "$B"
 mkdir -p "$B/gen" "$B/classes" "$B/dex" "$(dirname "$OUT")"
 
@@ -34,7 +34,7 @@ echo "[2/8] 链接资源、生成 R.java 与基础 APK ..."
   -0 arsc \
   --auto-add-overlay \
   --min-sdk-version 24 --target-sdk-version 34 \
-  --version-code 1 --version-name "1.0.0"
+  --version-code 2 --version-name "1.1.0"
 
 echo "[3/8] 编译 Java 源码 ..."
 find "$ROOT/src" "$B/gen" -name '*.java' > "$B/sources.txt"

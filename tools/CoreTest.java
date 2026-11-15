@@ -52,7 +52,35 @@ public class CoreTest {
         ImageIO.write(combo, "png", new File(dir, "preview.png"));
         System.out.println("预览图: " + new File(dir, "preview.png"));
 
-        // 5) 色卡
+        // 5) 新增调节项：浓度低 / 浓度高 / 加粗
+        LineArtCore.Options low = new LineArtCore.Options();
+        low.density = 15;
+        int[] lowOut = LineArtCore.process(px, w, h, low);
+        write(lowOut, w, h, new File(dir, "ctrl_density_low.png"));
+        stat("浓度 15%", lowOut);
+
+        LineArtCore.Options high = new LineArtCore.Options();
+        high.density = 85;
+        int[] highOut = LineArtCore.process(px, w, h, high);
+        write(highOut, w, h, new File(dir, "ctrl_density_high.png"));
+        stat("浓度 85%", highOut);
+
+        LineArtCore.Options thick = new LineArtCore.Options();
+        thick.lineWidth = 4;
+        int[] thickOut = LineArtCore.process(px, w, h, thick);
+        write(thickOut, w, h, new File(dir, "ctrl_width_4.png"));
+        stat("粗细 4×", thickOut);
+
+        // 6) 调节效果四栏预览：默认 | 浓度15% | 浓度85% | 粗细4×
+        BufferedImage ctrl = new BufferedImage(w * 4, h, BufferedImage.TYPE_INT_ARGB);
+        ctrl.setRGB(0, 0, w, h, smartOut, 0, w);
+        ctrl.setRGB(w, 0, w, h, lowOut, 0, w);
+        ctrl.setRGB(w * 2, 0, w, h, highOut, 0, w);
+        ctrl.setRGB(w * 3, 0, w, h, thickOut, 0, w);
+        ImageIO.write(ctrl, "png", new File(dir, "controls_preview.png"));
+        System.out.println("调节预览图: " + new File(dir, "controls_preview.png"));
+
+        // 7) 色卡
         List<ColorCard.Swatch> crowd = ColorCard.crowd(px, w, h, 0.01, 8);
         List<ColorCard.Swatch> naive = ColorCard.naive(px, w, h, 4, 2);
         StringBuilder sb = new StringBuilder("色卡 crowd: ");
